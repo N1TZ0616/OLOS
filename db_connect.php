@@ -1,35 +1,31 @@
 <?php
-// db_connect.php
-// Railway MySQL (Cloud) connection
-
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-/* =========================
-   Railway MySQL Config
-========================= */
-$DB_HOST = 'gondola.proxy.rlwy.net';
-$DB_USER = 'root';
-$DB_PASS = 'UQnIBtmqRCthKfELFHlTBCOBBffwTKDy';
-$DB_NAME = 'olos';
-$DB_PORT = 16199;
+/*
+|--------------------------------------------------------------------------
+| Database configuration
+|--------------------------------------------------------------------------
+| Priority:
+| 1. Environment variables (Render / Railway)
+| 2. Local fallback (XAMPP)
+*/
 
-/* =========================
-   Create mysqli connection
-========================= */
-$mysqli = new mysqli($DB_HOST, $DB_USER, $DB_PASS, $DB_NAME, $DB_PORT);
+// Railway / Render 环境变量
+$DB_HOST = getenv('DB_HOST') ?: '127.0.0.1';
+$DB_USER = getenv('DB_USER') ?: 'root';
+$DB_PASS = getenv('DB_PASS') ?: '';
+$DB_NAME = getenv('DB_NAME') ?: 'food_ordering';
+$DB_PORT = getenv('DB_PORT') ?: 3306;
 
-/* =========================
-   Connection check
-========================= */
+// Create connection
+$mysqli = new mysqli($DB_HOST, $DB_USER, $DB_PASS, $DB_NAME, (int)$DB_PORT);
+
+// Check connection
 if ($mysqli->connect_errno) {
-    error_log("MySQL connect error: " . $mysqli->connect_error);
-    echo "Service temporarily unavailable. (Database connection error)";
-    exit;
+    error_log("MySQL Error: " . $mysqli->connect_error);
+    die("Database connection failed.");
 }
 
-/* =========================
-   Charset
-========================= */
-$mysqli->set_charset('utf8mb4');
+$mysqli->set_charset("utf8mb4");
