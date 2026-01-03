@@ -1,0 +1,2099 @@
+<?php
+session_start();
+require "config/db.php";
+
+/* ======================
+   LOGIN CHECK
+====================== */
+if (!isset($_SESSION['user_id'])) {
+    header("Location: index.php");
+    exit;
+}
+
+/* ======================
+   INIT CART
+====================== */
+if (!isset($_SESSION['cart'])) {
+    $_SESSION['cart'] = [];
+}
+
+/* ======================
+   ADD TO CART
+====================== */
+if (isset($_POST['add_to_cart']) && isset($_POST['menu_id'])) {
+
+    $menu_id = (int) $_POST['menu_id'];
+
+    if (isset($_SESSION['cart'][$menu_id])) {
+        $_SESSION['cart'][$menu_id]++;
+    } else {
+        $_SESSION['cart'][$menu_id] = 1;
+    }
+
+    header("Location: cart.php");
+    exit;
+}
+
+/* ======================
+   UPDATE CART
+====================== */
+if (isset($_POST['update_cart'])) {
+
+    foreach ($_POST['quantity'] as $menu_id => $qty) {
+
+        $menu_id = (int) $menu_id;
+        $qty = (int) $qty;
+
+        if ($qty <= 0) {
+            unset($_SESSION['cart'][$menu_id]);
+        } else {
+            $_SESSION['cart'][$menu_id] = $qty;
+        }
+    }
+
+    header("Location: cart.php");
+    exit;
+}
+
+/* ======================
+   REMOVE ITEM
+====================== */
+if (isset($_GET['remove'])) {
+    $remove_id = (int) $_GET['remove'];
+    unset($_SESSION['cart'][$remove_id]);
+    header("Location: cart.php");
+    exit;
+}
+
+/* ======================
+   FETCH CART ITEMS
+====================== */
+$items = [];
+$total = 0;
+
+if (!empty($_SESSION['cart'])) {
+
+    $ids = implode(",", array_keys($_SESSION['cart']));
+    $sql = "SELECT * FROM menu WHERE id IN ($ids)";
+    $result = mysqli_query($conn, $sql);
+
+    while ($row = mysqli_fetch_assoc($result)) {
+        $qty = $_SESSION['cart'][$row['id']];
+        $subtotal = $row['price'] * $qty;
+        $total += $subtotal;
+
+        $items[] = [
+            'id' => $row['id'],
+            'name' => $row['name'],
+            'price' => $row['price'],
+            'qty' => $qty,
+            'subtotal' => $subtotal
+        ];
+    }
+}
+?>
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>orderingol | Cart</title>
+
+<style>
+body{
+  margin:0;
+  font-family:Segoe UI, Arial;
+  background:#F4E04D;
+}
+
+.container{
+  max-width:900px;
+  margin:40px auto;
+  background:white;
+  padding:30px;
+  border-radius:16px;
+  box-shadow:0 20px 40px rgba(0,0,0,.25);
+}
+
+h2{
+  margin-top:0;
+}
+
+table{
+  width:100%;
+  border-collapse:collapse;
+}
+
+th, td{
+  padding:12px;
+  border-bottom:1px solid #ddd;
+  text-align:center;
+}
+
+th{
+  background:#f7f7f7;
+}
+
+input[type=number]{
+  width:60px;
+}
+
+.actions{
+  display:flex;
+  justify-content:space-between;
+  margin-top:20px;
+}
+
+button, .btn{
+  padding:10px 18px;
+  border:none;
+  border-radius:6px;
+  cursor:pointer;
+  background:#17C3B2;
+  color:white;
+  text-decoration:none;
+}
+
+.total{
+  font-size:20px;
+  font-weight:bold;
+  text-align:right;
+  margin-top:20px;
+}
+</style>
+
+</head>
+<body>
+
+<div class="container">
+  <h2>Your Cart</h2>
+
+  <?php if (empty($items)): ?>
+    <p>Your cart is empty.</p>
+    <a class="btn" href="menu.php">Back to Menu</a>
+  <?php else: ?>
+
+  <form method="post">
+    <table>
+      <tr>
+        <th>Item</th>
+        <th>Price</th>
+        <th>Quantity</th>
+        <th>Subtotal</th>
+        <th>Action</th>
+      </tr>
+
+      <?php foreach ($items as $item): ?>
+      <tr>
+        <td><?= htmlspecialchars($item['name']) ?></td>
+        <td>RM <?= number_format($item['price'],2) ?></td>
+        <td>
+          <input type="number" name="quantity[<?= $item['id'] ?>]" value="<?= $item['qty'] ?>" min="0">
+        </td>
+        <td>RM <?= number_format($item['subtotal'],2) ?></td>
+        <td>
+          <a href="cart.php?remove=<?= $item['id'] ?>" style="color:red;">Remove</a>
+        </td>
+      </tr>
+      <?php endforeach; ?>
+
+    </table>
+
+    <div class="total">Total: RM <?= number_format($total,2) ?></div>
+
+    <div class="actions">
+      <a class="btn" href="menu.php">Continue Shopping</a>
+      <div>
+        <button type="submit" name="update_cart">Update Cart</button>
+        <a class="btn" href="checkout.php">Checkout</a>
+      </div>
+    </div>
+  </form>
+
+  <?php endif; ?>
+</div>
+
+</body>
+</html>
+
+<?php
+// cart_action.php
+// Manage session-based cart (add, remove, update_all, clear)
+
+if (session_status() === PHP_SESSION_NONE) session_start();
+require_once __DIR__ . '/db_connect.php';
+
+$action = $_REQUEST['action'] ?? '';
+$method = $_SERVER['REQUEST_METHOD'];
+
+if (!isset($_SESSION['cart']) || !is_array($_SESSION['cart'])) $_SESSION['cart'] = [];
+$cart = &$_SESSION['cart'];
+
+function getProduct($mysqli, $id) {
+    $stmt = $mysqli->prepare("SELECT `id`,`name`,`price`,`image` FROM `menu` WHERE `id` = ? LIMIT 1");
+    if (!$stmt) return null;
+    $stmt->bind_param('i', $id);
+    if ($stmt->execute()) {
+        $res = $stmt->get_result();
+        $row = $res->fetch_assoc();
+        $res->free();
+        $stmt->close();
+        return $row;
+    }
+    $stmt->close();
+    return null;
+}
+
+if ($action === 'add' && $method === 'POST') {
+    $pid = isset($_POST['product_id']) ? (int)$_POST['product_id'] : 0;
+    $qty = max(1, (int)($_POST['qty'] ?? 1));
+    if ($pid > 0) {
+        $prod = getProduct($mysqli, $pid);
+        if ($prod) {
+            if (isset($cart[$pid])) {
+                $cart[$pid]['qty'] += $qty;
+            } else {
+                $cart[$pid] = [
+                    'id' => $prod['id'],
+                    'name' => $prod['name'],
+                    'price' => (float)$prod['price'],
+                    'image' => $prod['image'],
+                    'qty' => $qty
+                ];
+            }
+        }
+    }
+    $redirect = $_SERVER['HTTP_REFERER'] ?? 'menu.php';
+    header('Location: ' . $redirect);
+    exit;
+}
+
+if ($action === 'remove') {
+    $pid = isset($_GET['product_id']) ? (int)$_GET['product_id'] : 0;
+    if ($pid > 0 && isset($cart[$pid])) unset($cart[$pid]);
+    header('Location: cart.php'); exit;
+}
+
+if ($action === 'update_all' && $method === 'POST') {
+    $qtys = $_POST['qty'] ?? [];
+    foreach ($qtys as $pid => $q) {
+        $pid = (int)$pid; $q = (int)$q;
+        if ($q < 1) {
+            unset($cart[$pid]);
+        } else {
+            if (isset($cart[$pid])) $cart[$pid]['qty'] = $q;
+        }
+    }
+    header('Location: cart.php'); exit;
+}
+
+if ($action === 'clear') {
+    $_SESSION['cart'] = [];
+    header('Location: cart.php'); exit;
+}
+
+header('Location: menu.php');
+exit;
+<?php
+session_start();
+require "config/db.php";
+
+/* ======================
+   LOGIN CHECK
+====================== */
+if (!isset($_SESSION['user_id'])) {
+    header("Location: index.php");
+    exit;
+}
+
+/* ======================
+   CART CHECK
+====================== */
+if (empty($_SESSION['cart'])) {
+    header("Location: cart.php");
+    exit;
+}
+
+$user_id = $_SESSION['user_id'];
+$cart = $_SESSION['cart'];
+
+/* ======================
+   FETCH CART ITEMS
+====================== */
+$ids = implode(",", array_keys($cart));
+
+$sql = "SELECT id, name, price, restaurant_id
+        FROM menu
+        WHERE id IN ($ids)";
+$result = mysqli_query($conn, $sql);
+
+$items = [];
+$total = 0;
+$restaurant_id = null;
+
+while ($row = mysqli_fetch_assoc($result)) {
+
+    // 订单只属于一家餐�?
+    if ($restaurant_id === null) {
+        $restaurant_id = $row['restaurant_id'];
+    }
+
+    $qty = $cart[$row['id']];
+    $subtotal = $row['price'] * $qty;
+    $total += $subtotal;
+
+    $items[] = [
+        'menu_item_id' => $row['id'],   // �?对应 order_details.menu_item_id
+        'name' => $row['name'],
+        'unit_price' => $row['price'],  // �?unit_price
+        'quantity' => $qty,
+        'subtotal' => $subtotal
+    ];
+}
+
+/* ======================
+   PLACE ORDER
+====================== */
+if (isset($_POST['place_order'])) {
+
+    // 1️⃣ 插入 orders
+    $order_sql = "
+        INSERT INTO orders
+        (user_id, restaurant_id, total_amount, status)
+        VALUES
+        ($user_id, $restaurant_id, $total, 'pending')
+    ";
+    mysqli_query($conn, $order_sql);
+
+    $order_id = mysqli_insert_id($conn);
+
+    // 2️⃣ 插入 order_details
+    foreach ($items as $item) {
+
+        $detail_sql = "
+            INSERT INTO order_details
+            (order_id, menu_item_id, quantity, unit_price, subtotal)
+            VALUES
+            (
+                $order_id,
+                {$item['menu_item_id']},
+                {$item['quantity']},
+                {$item['unit_price']},
+                {$item['subtotal']}
+            )
+        ";
+        mysqli_query($conn, $detail_sql);
+    }
+
+    // 3️⃣ 清空购物�?
+    unset($_SESSION['cart']);
+
+    // 4️⃣ 成功跳转
+    header("Location: checkout.php?success=1&order_id=$order_id");
+    exit;
+}
+?>
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>orderingol | Checkout</title>
+<style>
+body{
+  font-family:Arial;
+  background:#F4E04D;
+}
+.container{
+  width:600px;
+  margin:60px auto;
+  background:white;
+  padding:30px;
+  border-radius:16px;
+}
+button{
+  padding:10px 20px;
+  background:#17C3B2;
+  color:white;
+  border:none;
+  border-radius:6px;
+  cursor:pointer;
+}
+</style>
+</head>
+<body>
+
+<div class="container">
+
+<?php if (isset($_GET['success'])): ?>
+
+  <h2>Order Successful 🎉</h2>
+  <p>Your Order ID: <strong>#<?= $_GET['order_id'] ?></strong></p>
+  <a href="menu.php">Back to Menu</a>
+
+<?php else: ?>
+
+  <h2>Confirm Order</h2>
+  <p>Total Amount: <strong>RM <?= number_format($total,2) ?></strong></p>
+
+  <form method="post">
+    <button type="submit" name="place_order">Place Order</button>
+  </form>
+
+<?php endif; ?>
+
+</div>
+
+</body>
+</html>
+
+<?php
+// db_connect.php
+// mysqli connection for XAMPP / your environment
+// Edit $DB_HOST, $DB_USER, $DB_PASS, $DB_NAME or $DB_PORT if needed.
+
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
+$DB_HOST = '127.0.0.1';
+$DB_USER = 'root';
+$DB_PASS = '';
+$DB_NAME = 'food_ordering';
+$DB_PORT = 3307; // change to 3306 if your MySQL listens on 3306
+
+// create mysqli
+$mysqli = new mysqli($DB_HOST, $DB_USER, $DB_PASS, $DB_NAME, $DB_PORT);
+
+// check
+if ($mysqli->connect_errno) {
+    // For development show message; in production log and show generic message
+    error_log("MySQL connect error: " . $mysqli->connect_error);
+    echo "Service temporarily unavailable. (Database connection error)";
+    exit;
+}
+
+$mysqli->set_charset('utf8mb4');
+<?php
+// home.php
+// Dashboard after login. Shows welcome and links to shop/cart.
+
+if (session_status() === PHP_SESSION_NONE) session_start();
+require_once __DIR__ . '/db_connect.php';
+
+// require login
+if (empty($_SESSION['user']) || !is_array($_SESSION['user'])) {
+    header('Location: index.php');
+    exit;
+}
+
+$user = $_SESSION['user'];
+
+// determine display name
+$displayName = $user['full_name'] ?? $user['username'] ?? $user['email'] ?? 'User';
+
+// cart count
+$cartCount = 0;
+if (!empty($_SESSION['cart']) && is_array($_SESSION['cart'])) {
+    foreach ($_SESSION['cart'] as $it) $cartCount += (int)($it['qty'] ?? 0);
+}
+?>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Home �?Food Delivery</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+:root{--page-bg:#f0e0df;--card:#f6e34b;--accent:#14c0bf;--muted:#6b7280;--maxw:420px;}
+html,body{margin:0;font-family:Arial,Helvetica,sans-serif;background:var(--page-bg);color:#111;height:100%;}
+.container{max-width:var(--maxw);margin:20px auto;padding:12px;}
+.header{display:flex;align-items:center;justify-content:space-between;background:var(--card);padding:12px;border-radius:10px;}
+.brand{font-weight:800;}
+.link{font-weight:700;text-decoration:none;color:#111;}
+.card{background:var(--card);padding:14px;border-radius:12px;margin-top:12px;box-shadow:0 2px 8px rgba(0,0,0,0.06);}
+.btn{background:var(--accent);color:#fff;padding:10px 14px;border-radius:12px;border:none;font-weight:800;cursor:pointer;}
+.btn-logout{background:#0f172a;color:#fff;padding:10px 14px;border-radius:12px;border:none;font-weight:800;cursor:pointer;}
+.footer{margin-top:18px;text-align:center;color:var(--muted);font-size:13px;}
+</style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="brand">Food Delivery</div>
+      <div><a class="link" href="cart.php">Cart (<?php echo (int)$cartCount; ?>)</a></div>
+    </div>
+
+    <div class="card">
+      <h2 style="margin:6px 0;">Welcome, <?php echo htmlspecialchars($displayName); ?></h2>
+      <p style="margin:6px 0 12px 0;color:var(--muted);">Browse menu and place your order.</p>
+
+      <div style="display:flex;gap:8px;">
+        <a href="menu.php"><button class="btn">Start Ordering</button></a>
+        <a href="logout.php"><button class="btn-logout">Logout</button></a>
+      </div>
+    </div>
+
+    <div class="footer">&copy; <?php echo date('Y'); ?> Food Delivery</div>
+  </div>
+</body>
+</html>
+<?php
+session_start();
+require "config/db.php";
+
+$error = "";
+
+/* ======================
+   LOGIN
+====================== */
+if (
+    isset($_POST['login']) &&
+    !empty($_POST['login_input']) &&
+    !empty($_POST['password'])
+) {
+
+    $login_input = mysqli_real_escape_string($conn, $_POST['login_input']);
+    $password    = $_POST['password'];
+
+    $sql = "SELECT * FROM users 
+            WHERE username='$login_input' 
+               OR email='$login_input'
+            LIMIT 1";
+
+    $result = mysqli_query($conn, $sql);
+
+    if ($result && mysqli_num_rows($result) === 1) {
+
+        $user = mysqli_fetch_assoc($result);
+
+        if (password_verify($password, $user['password_hash'])) {
+
+            $_SESSION['user_id']  = $user['id'];
+            $_SESSION['username'] = $user['username'];
+            $_SESSION['role']     = $user['role'];
+
+            /* ===== Role redirect ===== */
+            if ($user['role'] === 'admin') {
+                header("Location: admin/dashboard.php");
+            } elseif ($user['role'] === 'restaurant_staff') {
+                header("Location: staff/dashboard.php");
+            } elseif ($user['role'] === 'delivery_driver') {
+                header("Location: delivery/dashboard.php");
+            } else {
+                header("Location: menu.php");
+            }
+            exit;
+
+        } else {
+            $error = "Invalid password.";
+        }
+
+    } else {
+        $error = "User not found.";
+    }
+}
+
+/* ======================
+   REGISTER
+====================== */
+if (
+    isset($_POST['register']) &&
+    !empty($_POST['username']) &&
+    !empty($_POST['email']) &&
+    !empty($_POST['password']) &&
+    !empty($_POST['role'])
+) {
+
+    $username = mysqli_real_escape_string($conn, $_POST['username']);
+    $email    = mysqli_real_escape_string($conn, $_POST['email']);
+    $role     = $_POST['role'];
+    $password_hash = password_hash($_POST['password'], PASSWORD_DEFAULT);
+
+    $check = mysqli_query(
+        $conn,
+        "SELECT id FROM users 
+         WHERE username='$username' OR email='$email'"
+    );
+
+    if ($check && mysqli_num_rows($check) > 0) {
+        $error = "Username or Email already exists.";
+    } else {
+
+        $sql = "INSERT INTO users (username, email, password_hash, role)
+                VALUES ('$username','$email','$password_hash','$role')";
+
+        if (mysqli_query($conn, $sql)) {
+            $error = "Registration successful. Please login.";
+        } else {
+            $error = "Registration failed.";
+        }
+    }
+}
+?>
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>orderingol | Login</title>
+
+<style>
+body{
+  margin:0;
+  height:100vh;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  font-family:Segoe UI, Arial;
+
+  background:
+    linear-gradient(rgba(0,0,0,.45), rgba(0,0,0,.45)),
+    url("assets/img/bg-orderingol.jpg") center / cover no-repeat;
+}
+
+.container{
+  width:820px;
+  display:flex;
+  background:rgba(255,255,255,.95);
+  border-radius:20px;
+  overflow:hidden;
+  box-shadow:0 25px 50px rgba(0,0,0,.35);
+}
+
+.left{
+  width:50%;
+  background:#F4E04D;
+  padding:50px;
+}
+
+.right{
+  width:50%;
+  padding:40px;
+}
+
+h1{ margin:0; }
+h2{ margin-top:0; }
+
+input, select, button{
+  width:100%;
+  padding:10px;
+  margin-bottom:12px;
+}
+
+button{
+  background:#17C3B2;
+  color:white;
+  border:none;
+  cursor:pointer;
+}
+
+.error{
+  color:red;
+  font-size:14px;
+  margin-bottom:10px;
+}
+
+.switch{
+  cursor:pointer;
+  color:#17C3B2;
+  font-size:14px;
+}
+</style>
+
+<script>
+function showRegister(){
+  document.getElementById("loginBox").style.display="none";
+  document.getElementById("registerBox").style.display="block";
+}
+function showLogin(){
+  document.getElementById("registerBox").style.display="none";
+  document.getElementById("loginBox").style.display="block";
+}
+</script>
+
+</head>
+<body>
+
+<div class="container">
+
+  <div class="left">
+    <h1>orderingol</h1>
+    <p>Smart Food Ordering Platform</p>
+  </div>
+
+  <div class="right">
+
+    <?php if ($error !== ""): ?>
+      <div class="error"><?= htmlspecialchars($error) ?></div>
+    <?php endif; ?>
+
+    <!-- LOGIN -->
+    <div id="loginBox">
+      <h2>Login</h2>
+      <form method="post">
+        <input type="text" name="login_input" placeholder="Username or Email" required>
+        <input type="password" name="password" placeholder="Password" required>
+        <button type="submit" name="login">Login</button>
+      </form>
+      <div class="switch" onclick="showRegister()">No account? Register</div>
+    </div>
+
+    <!-- REGISTER -->
+    <div id="registerBox" style="display:none;">
+      <h2>Register</h2>
+      <form method="post">
+        <input type="text" name="username" placeholder="Username" required>
+        <input type="email" name="email" placeholder="Email" required>
+        <input type="password" name="password" placeholder="Password" required>
+
+        <!-- �?关键修改在这�?-->
+        <select name="role" required>
+          <option value="customer">Customer</option>
+          <option value="admin">Admin</option>
+          <option value="restaurant_staff">Restaurant Staff</option>
+          <option value="delivery_driver">Delivery</option>
+        </select>
+
+        <button type="submit" name="register">Register</button>
+      </form>
+      <div class="switch" onclick="showLogin()">Back to Login</div>
+    </div>
+
+  </div>
+
+</div>
+
+</body>
+</html>
+
+<?php
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
+require "config/db.php";
+
+$error = "";
+
+if ($_SERVER["REQUEST_METHOD"] === "POST") {
+
+    $login = trim($_POST["login"]);
+    $password = $_POST["password"];
+
+    if ($login === "" || $password === "") {
+        $error = "Please enter username/email and password.";
+    } else {
+
+        // username OR email login
+        $stmt = $conn->prepare(
+            "SELECT id, username, password_hash, role 
+             FROM users 
+             WHERE username = ? OR email = ? 
+             LIMIT 1"
+        );
+
+        $stmt->bind_param("ss", $login, $login);
+        $stmt->execute();
+        $result = $stmt->get_result();
+
+        if ($result->num_rows === 1) {
+            $user = $result->fetch_assoc();
+
+            if (password_verify($password, $user["password_hash"])) {
+
+                // login success
+                $_SESSION["user_id"]  = $user["id"];
+                $_SESSION["username"] = $user["username"];
+                $_SESSION["role"]     = $user["role"];
+
+                header("Location: index.php");
+                exit();
+
+            } else {
+                $error = "Invalid password.";
+            }
+
+        } else {
+            $error = "User not found.";
+        }
+
+        $stmt->close();
+    }
+}
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>orderingol | Login</title>
+
+<style>
+:root{
+  --primary-yellow:#F4E04D;
+  --accent-teal:#17C3B2;
+  --dark:#1F2933;
+  --light:#6B7280;
+  --white:#FFFFFF;
+}
+
+*{
+  box-sizing:border-box;
+  font-family:Segoe UI, Arial, sans-serif;
+}
+
+body{
+  margin:0;
+  min-height:100vh;
+  background:url("assets/img/bg-orderingol.jpg") center / cover no-repeat;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+}
+
+.login-box{
+  background:var(--primary-yellow);
+  width:320px;
+  padding:26px;
+  border-radius:18px;
+  box-shadow:0 12px 30px rgba(0,0,0,.25);
+}
+
+.app-title{
+  text-align:center;
+  font-size:26px;
+  font-weight:700;
+  letter-spacing:1.5px;
+}
+
+.subtitle{
+  text-align:center;
+  font-size:13px;
+  color:var(--light);
+  margin-bottom:18px;
+}
+
+input{
+  width:100%;
+  padding:12px;
+  margin-bottom:12px;
+  border:none;
+  border-radius:10px;
+  font-size:14px;
+}
+
+button{
+  width:100%;
+  padding:12px;
+  background:var(--accent-teal);
+  color:white;
+  border:none;
+  border-radius:10px;
+  font-size:15px;
+  cursor:pointer;
+}
+
+.error{
+  color:red;
+  font-size:13px;
+  text-align:center;
+  margin-bottom:10px;
+}
+</style>
+</head>
+
+<body>
+
+<div class="login-box">
+
+    <div class="app-title">orderingol</div>
+    <div class="subtitle">Smart Food Ordering Platform</div>
+
+    <?php if ($error): ?>
+        <div class="error"><?= htmlspecialchars($error) ?></div>
+    <?php endif; ?>
+
+    <form method="post">
+        <input type="text" name="login" placeholder="Username or Email">
+        <input type="password" name="password" placeholder="Password">
+        <button type="submit">Login</button>
+    </form>
+
+</div>
+
+</body>
+</html>
+<?php
+// logout.php
+if (session_status() === PHP_SESSION_NONE) session_start();
+$_SESSION = [];
+if (ini_get("session.use_cookies")) {
+    $params = session_get_cookie_params();
+    setcookie(session_name(), '', time() - 42000,
+        $params["path"], $params["domain"],
+        $params["secure"], $params["httponly"]
+    );
+}
+session_destroy();
+header('Location: index.php');
+exit;
+<?php
+session_start();
+require "config/db.php";
+
+/* ======================
+   LOGIN CHECK
+====================== */
+if (!isset($_SESSION['user_id'])) {
+    header("Location: index.php");
+    exit;
+}
+
+/* ======================
+   FETCH MENU
+====================== */
+$sql = "SELECT * FROM menu 
+        WHERE available = 1
+        ORDER BY category, name";
+$result = mysqli_query($conn, $sql);
+
+/* 分类数组 */
+$menus = [];
+while ($row = mysqli_fetch_assoc($result)) {
+    $menus[$row['category']][] = $row;
+}
+?>
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>orderingol | Menu</title>
+
+<style>
+body{
+  margin:0;
+  font-family:Segoe UI, Arial;
+  background:
+    linear-gradient(rgba(0,0,0,.45), rgba(0,0,0,.45)),
+    url("assets/img/bg-orderingol.jpg") center / cover no-repeat;
+}
+
+.header{
+  padding:20px 40px;
+  color:white;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+}
+
+.logout{
+  color:white;
+  text-decoration:none;
+  background:#17C3B2;
+  padding:8px 14px;
+  border-radius:6px;
+}
+
+.container{
+  padding:20px 40px 40px;
+}
+
+.category-title{
+  color:white;
+  margin-top:40px;
+  margin-bottom:15px;
+  font-size:24px;
+  border-left:6px solid #F4E04D;
+  padding-left:12px;
+}
+
+.grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill, minmax(220px, 1fr));
+  gap:20px;
+}
+
+.card{
+  background:#F4E04D;
+  border-radius:16px;
+  padding:15px;
+  box-shadow:0 10px 25px rgba(0,0,0,.25);
+  display:flex;
+  flex-direction:column;
+}
+
+.card img{
+  width:100%;
+  height:140px;
+  object-fit:cover;
+  border-radius:12px;
+  background:#fff;
+}
+
+.card h4{
+  margin:10px 0 5px;
+}
+
+.price{
+  font-weight:bold;
+  margin-bottom:10px;
+}
+
+.card form{
+  margin-top:auto;
+}
+
+.card button{
+  width:100%;
+  padding:10px;
+  border:none;
+  border-radius:8px;
+  background:#17C3B2;
+  color:white;
+  cursor:pointer;
+  font-size:14px;
+}
+</style>
+
+</head>
+<body>
+
+<div class="header">
+  <h2>orderingol Menu</h2>
+  <a class="logout" href="logout.php">Logout</a>
+</div>
+
+<div class="container">
+
+<?php foreach ($menus as $category => $items): ?>
+  
+  <div class="category-title">
+    <?= htmlspecialchars($category) ?>
+  </div>
+
+  <div class="grid">
+    <?php foreach ($items as $item): ?>
+
+      <div class="card">
+        <img src="assets/img/<?= $item['image'] ?: 'placeholder.png' ?>" alt="">
+        <h4><?= htmlspecialchars($item['name']) ?></h4>
+        <div class="price">RM <?= number_format($item['price'], 2) ?></div>
+
+        <!-- �?正确�?Add to Cart -->
+        <form method="post" action="cart.php">
+          <input type="hidden" name="menu_id" value="<?= $item['id'] ?>">
+          <button type="submit" name="add_to_cart">Add to Cart</button>
+        </form>
+      </div>
+
+    <?php endforeach; ?>
+  </div>
+
+<?php endforeach; ?>
+
+</div>
+
+</body>
+</html>
+<?php
+session_start();
+require "config/db.php";
+
+if (!isset($_SESSION['user_id'])) {
+    header("Location: index.php");
+    exit;
+}
+
+$user_id = $_SESSION['user_id'];
+
+$order_sql = "
+    SELECT *
+    FROM orders
+    WHERE user_id = $user_id
+    ORDER BY created_at DESC
+";
+$order_result = mysqli_query($conn, $order_sql);
+?>
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>orderingol | My Orders</title>
+
+<style>
+body{
+  font-family:Segoe UI, Arial;
+  background:#F4E04D;
+  margin:0;
+}
+
+.container{
+  max-width:1000px;
+  margin:40px auto;
+  background:white;
+  padding:30px;
+  border-radius:16px;
+}
+
+.order{
+  border:1px solid #ddd;
+  border-radius:12px;
+  margin-bottom:20px;
+  padding:15px;
+}
+
+.order-header{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+}
+
+.status-btn{
+  padding:6px 12px;
+  border-radius:6px;
+  border:none;
+  cursor:pointer;
+  background:#17C3B2;
+  color:white;
+  font-size:13px;
+}
+
+.details{
+  display:none;
+  margin-top:15px;
+}
+
+table{
+  width:100%;
+  border-collapse:collapse;
+}
+
+th, td{
+  padding:10px;
+  border-bottom:1px solid #eee;
+  text-align:center;
+}
+
+th{
+  background:#f7f7f7;
+}
+
+.back{
+  display:inline-block;
+  margin-bottom:20px;
+  background:#17C3B2;
+  color:white;
+  padding:8px 14px;
+  border-radius:6px;
+  text-decoration:none;
+}
+</style>
+
+<script>
+function toggleDetails(id){
+    const el = document.getElementById("details-"+id);
+    el.style.display = el.style.display === "none" ? "block" : "none";
+}
+</script>
+
+</head>
+<body>
+
+<div class="container">
+
+<a class="back" href="menu.php">�?Back to Menu</a>
+
+<h2>My Orders</h2>
+
+<?php if (mysqli_num_rows($order_result) === 0): ?>
+    <p>No orders yet.</p>
+<?php endif; ?>
+
+<?php while ($order = mysqli_fetch_assoc($order_result)): ?>
+
+<div class="order">
+
+  <div class="order-header">
+    <div>
+      <strong>Order #<?= $order['id'] ?></strong><br>
+      <small><?= $order['created_at'] ?></small>
+    </div>
+
+    <!-- �?Pending 现在是可点击�?-->
+    <button class="status-btn"
+            onclick="toggleDetails(<?= $order['id'] ?>)">
+        <?= ucfirst($order['status']) ?>
+    </button>
+  </div>
+
+  <p><strong>Total:</strong> RM <?= number_format($order['total_amount'],2) ?></p>
+
+  <!-- Order Details -->
+  <div class="details" id="details-<?= $order['id'] ?>">
+
+    <table>
+      <tr>
+        <th>Item</th>
+        <th>Unit Price</th>
+        <th>Qty</th>
+        <th>Subtotal</th>
+      </tr>
+
+      <?php
+      $detail_sql = "
+          SELECT od.quantity, od.unit_price, od.subtotal, m.name
+          FROM order_details od
+          JOIN menu m ON od.menu_item_id = m.id
+          WHERE od.order_id = {$order['id']}
+      ";
+      $detail_result = mysqli_query($conn, $detail_sql);
+
+      while ($d = mysqli_fetch_assoc($detail_result)):
+      ?>
+      <tr>
+        <td><?= htmlspecialchars($d['name']) ?></td>
+        <td>RM <?= number_format($d['unit_price'],2) ?></td>
+        <td><?= $d['quantity'] ?></td>
+        <td>RM <?= number_format($d['subtotal'],2) ?></td>
+      </tr>
+      <?php endwhile; ?>
+    </table>
+
+  </div>
+
+</div>
+
+<?php endwhile; ?>
+
+</div>
+
+</body>
+</html>
+<?php
+// product_details.php
+// Show full product details and add to cart.
+
+if (session_status() === PHP_SESSION_NONE) session_start();
+require_once __DIR__ . '/db_connect.php';
+
+$id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
+if ($id <= 0) {
+    echo "Product not found."; exit;
+}
+
+$product = null;
+$sql = "SELECT `id`,`name`,`description`,`price`,`image`,`category`,`available` FROM `menu` WHERE `id` = ? LIMIT 1";
+if ($stmt = $mysqli->prepare($sql)) {
+    $stmt->bind_param('i', $id);
+    if ($stmt->execute()) {
+        $res = $stmt->get_result();
+        $product = $res->fetch_assoc();
+        $res->free();
+    }
+    $stmt->close();
+}
+
+if (!$product) {
+    echo "Product not found."; exit;
+}
+
+// cart count
+$cartCount = 0;
+if (!empty($_SESSION['cart']) && is_array($_SESSION['cart'])) {
+    foreach ($_SESSION['cart'] as $it) $cartCount += (int)($it['qty'] ?? 0);
+}
+?>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title><?php echo htmlspecialchars($product['name']); ?> �?Food Delivery</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+:root{--page-bg:#f0e0df;--card:#f6e34b;--accent:#14c0bf;--muted:#6b7280;--maxw:420px;}
+html,body{margin:0;font-family:Arial,Helvetica,sans-serif;background:var(--page-bg);color:#111;}
+.container{max-width:var(--maxw);margin:18px auto;padding:12px;}
+.header{display:flex;justify-content:space-between;align-items:center;background:var(--card);padding:12px;border-radius:10px;}
+.card{background:var(--card);padding:14px;border-radius:12px;margin-top:12px;}
+.img{width:100%;height:240px;border-radius:8px;object-fit:cover;background:#fff;}
+.title{font-weight:800;margin-top:10px;}
+.muted{color:var(--muted);font-size:13px;}
+.btn{background:var(--accent);color:#fff;padding:10px;border-radius:10px;border:none;cursor:pointer;font-weight:700;}
+.footer{margin-top:18px;text-align:center;color:var(--muted);font-size:13px;}
+</style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="brand">Food Delivery</div>
+      <div><a class="link" href="cart.php">Cart (<?php echo (int)$cartCount; ?>)</a></div>
+    </div>
+
+    <div class="card">
+      <?php if (!empty($product['image']) && file_exists(__DIR__.'/products/'.$product['image'])): ?>
+        <img class="img" src="<?php echo 'products/' . htmlspecialchars($product['image']); ?>" alt="">
+      <?php else: ?>
+        <div class="img" style="display:flex;align-items:center;justify-content:center;color:#666;">No Image</div>
+      <?php endif; ?>
+
+      <div class="title"><?php echo htmlspecialchars($product['name']); ?></div>
+      <div class="muted"><?php echo htmlspecialchars($product['category']); ?></div>
+      <p style="margin-top:10px;"><?php echo nl2br(htmlspecialchars($product['description'])); ?></p>
+
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;">
+        <div style="font-weight:800;font-size:18px;">$<?php echo number_format($product['price'], 2); ?></div>
+
+        <form method="post" action="cart_action.php" style="display:flex;gap:8px;align-items:center;">
+          <input type="hidden" name="action" value="add">
+          <input type="hidden" name="product_id" value="<?php echo (int)$product['id']; ?>">
+          <input type="number" name="qty" value="1" min="1" style="width:70px;padding:8px;border-radius:8px;border:1px solid #ddd;">
+          <button class="btn" type="submit">Add to Cart</button>
+        </form>
+      </div>
+    </div>
+
+    <div class="footer">&copy; <?php echo date('Y'); ?> Food Delivery</div>
+  </div>
+</body>
+</html>
+<?php
+// register.php
+// Create new user. Stores password using password_hash.
+
+if (session_status() === PHP_SESSION_NONE) session_start();
+require_once __DIR__ . '/db_connect.php';
+
+$errors = [];
+$success = '';
+$username = $full_name = $email = '';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $username = trim($_POST['username'] ?? '');
+    $full_name = trim($_POST['full_name'] ?? '');
+    $email = trim($_POST['email'] ?? '');
+    $password = $_POST['password'] ?? '';
+    $confirm = $_POST['confirm'] ?? '';
+
+    if ($username === '') $errors[] = 'Username is required.';
+    if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) $errors[] = 'Valid email is required.';
+    if ($password === '' || strlen($password) < 6) $errors[] = 'Password must be at least 6 characters.';
+    if ($password !== $confirm) $errors[] = 'Password confirmation does not match.';
+
+    if (empty($errors)) {
+        $hash = password_hash($password, PASSWORD_DEFAULT);
+        $stmt = $mysqli->prepare("INSERT INTO `users` (`username`,`password_hash`,`full_name`,`email`,`role`) VALUES (?,?,?,?,?)");
+        if ($stmt) {
+            $role = 'customer';
+            $stmt->bind_param('sssss', $username, $hash, $full_name, $email, $role);
+            if ($stmt->execute()) {
+                $success = 'Registration successful. You may login now.';
+                $username = $full_name = $email = '';
+            } else {
+                $errors[] = 'Registration failed: ' . $stmt->error;
+            }
+            $stmt->close();
+        } else {
+            $errors[] = 'Service temporarily unavailable.';
+            error_log('Register prepare error: ' . $mysqli->error);
+        }
+    }
+}
+?>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Register �?Food Delivery</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+:root{--bg:#f0e0df;--card:#f6e34b;--accent:#14c0bf;--muted:#6b7280;--maxw:420px;}
+html,body{margin:0;height:100%;font-family:Arial,Helvetica,sans-serif;background:var(--bg);color:#111;}
+.container{max-width:var(--maxw);margin:24px auto;padding:12px;}
+.header{background:var(--card);padding:16px;border-radius:12px;text-align:center;font-weight:800;}
+.card{background:var(--card);padding:14px;border-radius:12px;margin-top:12px;box-shadow:0 2px 8px rgba(0,0,0,0.06);}
+.label{display:block;margin-top:10px;font-weight:700;}
+.input{width:100%;padding:10px;border-radius:10px;border:1px solid #eee;margin-top:8px;font-size:14px;}
+.button{background:var(--accent);color:#fff;padding:12px;border-radius:12px;border:none;margin-top:14px;font-weight:800;width:100%;cursor:pointer;}
+.message-success{background:#ecfdf5;color:#065f46;padding:10px;border-radius:8px;margin-bottom:10px;}
+.message-error{background:#fde2e2;color:#991b1b;padding:10px;border-radius:8px;margin-bottom:10px;}
+.small{display:block;text-align:center;margin-top:10px;color:#0f172a;text-decoration:none;font-weight:700;}
+.footer{margin-top:18px;text-align:center;color:var(--muted);font-size:13px;}
+</style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">Food Delivery</div>
+
+    <div class="card">
+      <h2 style="margin:0 0 8px 0;">Create Account</h2>
+
+      <?php if (!empty($errors)): ?>
+        <div class="message-error"><ul style="margin:0;padding-left:18px;"><?php foreach ($errors as $e) echo "<li>" . htmlspecialchars($e) . "</li>"; ?></ul></div>
+      <?php endif; ?>
+
+      <?php if ($success): ?>
+        <div class="message-success"><?php echo htmlspecialchars($success); ?></div>
+      <?php endif; ?>
+
+      <form method="post" action="register.php" novalidate>
+        <label class="label" for="username">Username</label>
+        <input id="username" name="username" class="input" type="text" value="<?php echo htmlspecialchars($username); ?>">
+
+        <label class="label" for="full_name">Full name</label>
+        <input id="full_name" name="full_name" class="input" type="text" value="<?php echo htmlspecialchars($full_name); ?>">
+
+        <label class="label" for="email">Email</label>
+        <input id="email" name="email" class="input" type="email" value="<?php echo htmlspecialchars($email); ?>">
+
+        <label class="label" for="password">Password</label>
+        <input id="password" name="password" class="input" type="password">
+
+        <label class="label" for="confirm">Confirm password</label>
+        <input id="confirm" name="confirm" class="input" type="password">
+
+        <button class="button" type="submit">Register</button>
+      </form>
+
+      <a class="small" href="index.php">Already have an account? Login</a>
+    </div>
+
+    <div class="footer">&copy; <?php echo date('Y'); ?> Food Delivery</div>
+  </div>
+</body>
+</html>
+<?php
+$host = "127.0.0.1";
+$user = "root";
+$password = "";
+$database = "food_ordering";
+$port = 3307;
+
+$conn = new mysqli($host, $user, $password, $database, $port);
+
+if ($conn->connect_error) {
+    die("Database connection failed: " . $conn->connect_error);
+}
+
+$conn->set_charset("utf8mb4");
+<?php
+session_start();
+
+if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'restaurant_staff') {
+    header("Location: ../index.php");
+    exit;
+}
+?>
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Restaurant Staff Dashboard</title>
+
+<style>
+body{
+  margin:0;
+  font-family:Segoe UI, Arial;
+  background:#F4E04D;
+}
+
+.container{
+  max-width:800px;
+  margin:80px auto;
+  background:white;
+  padding:40px;
+  border-radius:16px;
+  text-align:center;
+}
+
+a{
+  display:block;
+  width:260px;
+  margin:15px auto;
+  padding:12px;
+  background:#17C3B2;
+  color:white;
+  text-decoration:none;
+  border-radius:8px;
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+  <h2>🍳 Restaurant Staff Dashboard</h2>
+
+  <a href="orders.php">Manage Orders</a>
+  <a href="../logout.php">Logout</a>
+</div>
+
+</body>
+</html>
+<?php
+session_start();
+require "../config/db.php";
+
+/* ======================
+   LOGIN + ROLE CHECK
+====================== */
+if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'restaurant_staff') {
+    header("Location: ../index.php");
+    exit;
+}
+
+/* ======================
+   GET STAFF RESTAURANT
+====================== */
+$user_id = $_SESSION['user_id'];
+
+$sql = "SELECT restaurant_id 
+        FROM users 
+        WHERE id = $user_id 
+          AND role = 'restaurant_staff'
+        LIMIT 1";
+
+$res = mysqli_query($conn, $sql);
+$staff = mysqli_fetch_assoc($res);
+
+if (!$staff || !$staff['restaurant_id']) {
+    die("Restaurant ID not set for staff.");
+}
+
+$restaurant_id = $staff['restaurant_id'];
+
+/* ======================
+   FETCH ORDERS
+====================== */
+$sql = "
+SELECT o.*, u.username
+FROM orders o
+JOIN users u ON o.user_id = u.id
+WHERE o.restaurant_id = $restaurant_id
+ORDER BY o.created_at DESC
+";
+
+$orders = mysqli_query($conn, $sql);
+?>
+
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Staff Orders</title>
+
+<style>
+body{
+  font-family:Segoe UI, Arial;
+  background:#f4f4f4;
+  padding:30px;
+}
+.box{
+  max-width:900px;
+  margin:auto;
+}
+.card{
+  background:white;
+  padding:20px;
+  border-radius:10px;
+  margin-bottom:15px;
+  box-shadow:0 6px 15px rgba(0,0,0,.15);
+}
+.actions a button{
+  padding:8px 12px;
+  border:none;
+  border-radius:6px;
+  cursor:pointer;
+  color:white;
+}
+.details{
+  background:#555;
+}
+</style>
+</head>
+
+<body>
+
+<div class="box">
+<h2>🍳 Restaurant Orders</h2>
+
+<?php while ($o = mysqli_fetch_assoc($orders)): ?>
+  <div class="card">
+    <p><strong>Order #<?= $o['id'] ?></strong></p>
+    <p>Customer: <?= htmlspecialchars($o['username']) ?></p>
+    <p>Status: <?= $o['status'] ?></p>
+    <p>Total: RM <?= number_format($o['total_amount'],2) ?></p>
+
+    <div class="actions">
+      <a href="order_details.php?order_id=<?= $o['id'] ?>">
+        <button class="details">View Details</button>
+      </a>
+    </div>
+  </div>
+<?php endwhile; ?>
+
+</div>
+
+</body>
+</html>
+<?php
+session_start();
+require "../config/db.php";
+
+/* ======================
+   LOGIN + ROLE CHECK
+====================== */
+if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'restaurant_staff') {
+    header("Location: ../index.php");
+    exit;
+}
+
+/* ======================
+   GET ORDER ID
+====================== */
+if (!isset($_GET['order_id'])) {
+    die("Order ID not provided.");
+}
+
+$order_id = (int)$_GET['order_id'];
+
+/* ======================
+   GET STAFF RESTAURANT
+====================== */
+$user_id = $_SESSION['user_id'];
+
+$sql = "SELECT restaurant_id 
+        FROM users 
+        WHERE id = $user_id 
+          AND role = 'restaurant_staff'
+        LIMIT 1";
+
+$res = mysqli_query($conn, $sql);
+$staff = mysqli_fetch_assoc($res);
+
+if (!$staff || !$staff['restaurant_id']) {
+    die("Restaurant not assigned.");
+}
+
+$restaurant_id = $staff['restaurant_id'];
+
+/* ======================
+   FETCH ORDER (SECURITY)
+====================== */
+$sql = "
+SELECT o.*, u.username
+FROM orders o
+JOIN users u ON o.user_id = u.id
+WHERE o.id = $order_id
+  AND o.restaurant_id = $restaurant_id
+LIMIT 1
+";
+
+$orderResult = mysqli_query($conn, $sql);
+$order = mysqli_fetch_assoc($orderResult);
+
+if (!$order) {
+    die("Order not found or access denied.");
+}
+
+/* ======================
+   FETCH ORDER ITEMS
+====================== */
+$sql = "
+SELECT 
+  m.name,
+  od.quantity,
+  od.unit_price,
+  od.subtotal
+FROM order_details od
+JOIN menu m ON od.menu_item_id = m.id
+WHERE od.order_id = $order_id
+";
+
+$items = mysqli_query($conn, $sql);
+?>
+
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Order Details</title>
+
+<style>
+body{
+  font-family:Segoe UI, Arial;
+  background:#f4f4f4;
+  padding:30px;
+}
+.box{
+  background:white;
+  padding:25px;
+  border-radius:10px;
+  max-width:700px;
+  margin:auto;
+  box-shadow:0 8px 20px rgba(0,0,0,.15);
+}
+table{
+  width:100%;
+  border-collapse:collapse;
+  margin-top:15px;
+}
+th, td{
+  padding:10px;
+  border-bottom:1px solid #ddd;
+  text-align:left;
+}
+th{
+  background:#F4E04D;
+}
+.total{
+  text-align:right;
+  font-size:18px;
+  font-weight:bold;
+}
+a{
+  text-decoration:none;
+  color:white;
+}
+.back{
+  display:inline-block;
+  margin-top:20px;
+  background:#17C3B2;
+  padding:10px 16px;
+  border-radius:6px;
+}
+</style>
+</head>
+
+<body>
+
+<div class="box">
+
+<h2>📦 Order #<?= $order['id'] ?></h2>
+<p><strong>Customer:</strong> <?= htmlspecialchars($order['username']) ?></p>
+<p><strong>Status:</strong> <?= $order['status'] ?></p>
+
+<table>
+<tr>
+  <th>Item</th>
+  <th>Qty</th>
+  <th>Unit Price</th>
+  <th>Subtotal</th>
+</tr>
+
+<?php while ($i = mysqli_fetch_assoc($items)): ?>
+<tr>
+  <td><?= htmlspecialchars($i['name']) ?></td>
+  <td><?= $i['quantity'] ?></td>
+  <td>RM <?= number_format($i['unit_price'],2) ?></td>
+  <td>RM <?= number_format($i['subtotal'],2) ?></td>
+</tr>
+<?php endwhile; ?>
+
+<tr>
+  <td colspan="3" class="total">Total</td>
+  <td class="total">RM <?= number_format($order['total_amount'],2) ?></td>
+</tr>
+</table>
+
+<a class="back" href="orders.php">�?Back to Orders</a>
+
+</div>
+
+</body>
+</html>
+<?php
+session_start();
+
+if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
+    header("Location: ../index.php");
+    exit;
+}
+?>
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Admin Dashboard</title>
+
+<style>
+body{
+  font-family:Segoe UI, Arial;
+  background:#F4E04D;
+  margin:0;
+}
+
+.container{
+  max-width:800px;
+  margin:60px auto;
+  background:white;
+  padding:40px;
+  border-radius:16px;
+  text-align:center;
+}
+
+a{
+  display:block;
+  margin:15px auto;
+  width:250px;
+  padding:12px;
+  background:#17C3B2;
+  color:white;
+  text-decoration:none;
+  border-radius:8px;
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+  <h2>Admin Dashboard</h2>
+
+  <a href="orders.php">📦 Manage Orders</a>
+  <a href="users.php">👤 View Users</a>
+  <a href="../logout.php">🚪 Logout</a>
+</div>
+
+</body>
+</html>
+<?php
+session_start();
+require "../config/db.php";
+
+if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
+    header("Location: ../index.php");
+    exit;
+}
+
+/* 更新状�?*/
+if (isset($_POST['update_status'])) {
+    $order_id = $_POST['order_id'];
+    $status   = $_POST['status'];
+
+    mysqli_query($conn,
+        "UPDATE orders SET status='$status' WHERE id=$order_id"
+    );
+}
+
+/* 获取所有订�?*/
+$sql = "
+SELECT o.*, u.username
+FROM orders o
+JOIN users u ON o.user_id = u.id
+ORDER BY o.created_at DESC
+";
+$result = mysqli_query($conn, $sql);
+?>
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Admin | Orders</title>
+
+<style>
+body{
+  font-family:Segoe UI, Arial;
+  background:#F4E04D;
+  margin:0;
+}
+
+.container{
+  max-width:1100px;
+  margin:40px auto;
+  background:white;
+  padding:30px;
+  border-radius:16px;
+}
+
+table{
+  width:100%;
+  border-collapse:collapse;
+}
+
+th, td{
+  padding:12px;
+  border-bottom:1px solid #eee;
+  text-align:center;
+}
+
+th{
+  background:#f7f7f7;
+}
+
+select, button{
+  padding:6px;
+}
+
+.back{
+  display:inline-block;
+  margin-bottom:20px;
+  background:#17C3B2;
+  color:white;
+  padding:8px 14px;
+  border-radius:6px;
+  text-decoration:none;
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+<a class="back" href="dashboard.php">�?Back</a>
+
+<h2>Manage Orders</h2>
+
+<table>
+<tr>
+  <th>ID</th>
+  <th>User</th>
+  <th>Total</th>
+  <th>Status</th>
+  <th>Action</th>
+</tr>
+
+<?php while ($o = mysqli_fetch_assoc($result)): ?>
+<tr>
+  <td>#<?= $o['id'] ?></td>
+  <td><?= htmlspecialchars($o['username']) ?></td>
+  <td>RM <?= number_format($o['total_amount'],2) ?></td>
+
+  <td>
+    <form method="post">
+      <input type="hidden" name="order_id" value="<?= $o['id'] ?>">
+      <select name="status">
+        <?php
+        $statuses = ['pending','confirmed','preparing','delivering','completed','cancelled'];
+        foreach ($statuses as $s):
+        ?>
+        <option value="<?= $s ?>" <?= $o['status']===$s?'selected':'' ?>>
+          <?= ucfirst($s) ?>
+        </option>
+        <?php endforeach; ?>
+      </select>
+  </td>
+
+  <td>
+      <button name="update_status">Update</button>
+    </form>
+  </td>
+</tr>
+<?php endwhile; ?>
+
+</table>
+
+</div>
+
+</body>
+</html>
+<?php
+session_start();
+require "../config/db.php";
+
+/* Admin only */
+if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
+    header("Location: ../index.php");
+    exit;
+}
+
+/* Fetch all users */
+$sql = "SELECT id, username, email, role, created_at FROM users ORDER BY created_at DESC";
+$result = mysqli_query($conn, $sql);
+?>
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Admin | Users</title>
+
+<style>
+body{
+  font-family:Segoe UI, Arial;
+  background:#F4E04D;
+  margin:0;
+}
+
+.container{
+  max-width:1000px;
+  margin:40px auto;
+  background:white;
+  padding:30px;
+  border-radius:16px;
+}
+
+h2{
+  margin-top:0;
+}
+
+table{
+  width:100%;
+  border-collapse:collapse;
+}
+
+th, td{
+  padding:12px;
+  border-bottom:1px solid #eee;
+  text-align:center;
+}
+
+th{
+  background:#f7f7f7;
+}
+
+.role{
+  font-weight:bold;
+  color:#17C3B2;
+}
+
+.back{
+  display:inline-block;
+  margin-bottom:20px;
+  background:#17C3B2;
+  color:white;
+  padding:8px 14px;
+  border-radius:6px;
+  text-decoration:none;
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+<a class="back" href="dashboard.php">�?Back to Dashboard</a>
+
+<h2>👤 User Management</h2>
+
+<table>
+<tr>
+  <th>ID</th>
+  <th>Username</th>
+  <th>Email</th>
+  <th>Role</th>
+  <th>Created At</th>
+</tr>
+
+<?php while ($u = mysqli_fetch_assoc($result)): ?>
+<tr>
+  <td><?= $u['id'] ?></td>
+  <td><?= htmlspecialchars($u['username']) ?></td>
+  <td><?= htmlspecialchars($u['email']) ?></td>
+  <td class="role"><?= ucfirst($u['role']) ?></td>
+  <td><?= $u['created_at'] ?></td>
+</tr>
+<?php endwhile; ?>
+
+</table>
+
+</div>
+
+</body>
+</html>
