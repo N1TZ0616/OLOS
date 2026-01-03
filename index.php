@@ -13,7 +13,8 @@ if (
     !empty($_POST['password'])
 ) {
 
-    $login_input = mysqli_real_escape_string($conn, $_POST['login_input']);
+    // ✅ 使用 $mysqli（云端 + 本地都兼容）
+    $login_input = mysqli_real_escape_string($mysqli, $_POST['login_input']);
     $password    = $_POST['password'];
 
     $sql = "SELECT * FROM users 
@@ -21,7 +22,7 @@ if (
                OR email='$login_input'
             LIMIT 1";
 
-    $result = mysqli_query($conn, $sql);
+    $result = mysqli_query($mysqli, $sql);
 
     if ($result && mysqli_num_rows($result) === 1) {
 
@@ -65,13 +66,14 @@ if (
     !empty($_POST['role'])
 ) {
 
-    $username = mysqli_real_escape_string($conn, $_POST['username']);
-    $email    = mysqli_real_escape_string($conn, $_POST['email']);
+    // ✅ 使用 $mysqli
+    $username = mysqli_real_escape_string($mysqli, $_POST['username']);
+    $email    = mysqli_real_escape_string($mysqli, $_POST['email']);
     $role     = $_POST['role'];
     $password_hash = password_hash($_POST['password'], PASSWORD_DEFAULT);
 
     $check = mysqli_query(
-        $conn,
+        $mysqli,
         "SELECT id FROM users 
          WHERE username='$username' OR email='$email'"
     );
@@ -83,7 +85,7 @@ if (
         $sql = "INSERT INTO users (username, email, password_hash, role)
                 VALUES ('$username','$email','$password_hash','$role')";
 
-        if (mysqli_query($conn, $sql)) {
+        if (mysqli_query($mysqli, $sql)) {
             $error = "Registration successful. Please login.";
         } else {
             $error = "Registration failed.";
@@ -207,7 +209,6 @@ function showLogin(){
         <input type="email" name="email" placeholder="Email" required>
         <input type="password" name="password" placeholder="Password" required>
 
-        <!-- ⭐ 关键修改在这里 -->
         <select name="role" required>
           <option value="customer">Customer</option>
           <option value="admin">Admin</option>
@@ -226,4 +227,3 @@ function showLogin(){
 
 </body>
 </html>
-

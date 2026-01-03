@@ -2,35 +2,65 @@
 session_start();
 require "config/db.php";
 
-/* 必须登录 */
-if(!isset($_SESSION['user_id'])){
+/* ======================
+   必须登录（放最前面）
+====================== */
+if (!isset($_SESSION['user_id'])) {
     header("Location: login.php");
     exit;
 }
 
-/* 🔥 检查是否有未读反馈 */
 $user_id = $_SESSION['user_id'];
-$unread = mysqli_fetch_assoc(mysqli_query($conn,"
-    SELECT COUNT(*) AS c FROM feedback 
-    WHERE user_id=$user_id AND user_unread=1
-"))['c'];
 
-/* TODAY PICKS */
-$today = mysqli_query($conn, "
-  SELECT * FROM menu
-  WHERE available = 1
-  ORDER BY RAND()
-  LIMIT 4
-");
+/* ======================
+   Fetch user avatar
+====================== */
+$userInfo = mysqli_fetch_assoc(
+    mysqli_query(
+        $mysqli,
+        "SELECT avatar FROM users WHERE id = $user_id LIMIT 1"
+    )
+);
 
-/* CATEGORIES */
-$categories = mysqli_query($conn, "
-  SELECT category, MIN(image) AS image
-  FROM menu
-  WHERE available = 1
-  GROUP BY category
-  ORDER BY category
-");
+$avatar = (!empty($userInfo['avatar']))
+    ? "assets/avatars/" . htmlspecialchars($userInfo['avatar'])
+    : "assets/avatars/default.png";
+
+/* ======================
+   未读反馈数量
+====================== */
+$unreadRow = mysqli_fetch_assoc(
+    mysqli_query(
+        $mysqli,
+        "SELECT COUNT(*) AS c 
+         FROM feedback 
+         WHERE user_id = $user_id AND user_unread = 1"
+    )
+);
+$unread = $unreadRow['c'] ?? 0;
+
+/* ======================
+   TODAY PICKS
+====================== */
+$today = mysqli_query(
+    $mysqli,
+    "SELECT * FROM menu
+     WHERE available = 1
+     ORDER BY RAND()
+     LIMIT 4"
+);
+
+/* ======================
+   CATEGORIES
+====================== */
+$categories = mysqli_query(
+    $mysqli,
+    "SELECT category, MIN(image) AS image
+     FROM menu
+     WHERE available = 1
+     GROUP BY category
+     ORDER BY category"
+);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -52,7 +82,16 @@ $categories = mysqli_query($conn, "
   border-radius:50%;margin-left:6px;
 }
 
-/* ------以下保留你原样式不改动------ */
+/* 用户头像 */
+.user-avatar{
+  width:34px;
+  height:34px;
+  border-radius:50%;
+  object-fit:cover;
+  border:2px solid #17C3B2;
+}
+
+/* ------原样式保持不变------ */
 body{
   margin:0;
   font-family:Segoe UI, system-ui;
@@ -69,6 +108,7 @@ body{
   background:#ffffff22;backdrop-filter:blur(6px);
   padding:10px 18px;border-radius:30px;color:white;
   font-weight:600;text-decoration:none;transition:.25s;
+  display:flex;align-items:center;gap:8px;
 }
 .menu-btn:hover{background:#ffffff55;transform:translateY(-2px);}
 .logout{background:var(--accent);padding:10px 18px;border-radius:30px;color:white;font-weight:600;text-decoration:none;}
@@ -109,13 +149,19 @@ body{
 
   <div class="header-right">
 
-      <!-- 我的订单 -->
+      <!-- My Account（显示头像） -->
+      <a class="menu-btn" href="profile.php">
+        <img src="<?= $avatar ?>" class="user-avatar">
+        My Account
+      </a>
+
       <a class="menu-btn" href="my_orders.php">📦 My Orders</a>
 
-      <!-- ⭐ 我的评价 + 🔴未读提示 -->
       <a class="menu-btn" href="user_feedback_history.php">
           ⭐ My Feedback
-          <?php if($unread>0) echo "<span class='red-dot'></span>"; ?>
+          <?php if($unread > 0): ?>
+            <span class="red-dot"></span>
+          <?php endif; ?>
       </a>
 
       <a class="logout" href="logout.php">Logout</a>
@@ -124,7 +170,6 @@ body{
 
 <div class="container">
 
-<!-- 以下全保留你的原结构不动 -->
 <div class="section-title">🌟 Today’s Picks</div>
 <div class="picks">
 <?php while($p=mysqli_fetch_assoc($today)): ?>
@@ -145,7 +190,7 @@ body{
 <div class="section-title">🍴 Categories</div>
 <div class="grid">
 <?php while($c=mysqli_fetch_assoc($categories)): ?>
-  <a href="category.php?category=<?=urlencode($c['category'])?>" style="color:inherit;text-decoration:none;">
+  <a href="category.php?category=<?= urlencode($c['category']) ?>" style="color:inherit;text-decoration:none;">
       <div class="cat-card">
         <img src="assets/img/<?= htmlspecialchars($c['image']) ?>">
         <div class="cat-overlay"></div>
