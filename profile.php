@@ -32,10 +32,12 @@ if (isset($_POST['update_avatar']) && isset($_FILES['avatar']) && $_FILES['avata
     if (in_array($ext, $allowed)) {
 
         $filename = "avatar_" . $user_id . "_" . time() . "." . $ext;
-        $target   = "assets/avatars/" . $filename;
 
-        if (!is_dir("assets/avatars")) {
-            mkdir("assets/avatars", 0777, true);
+        // ✅ 改 1：磁盘真实路径（Render / 本地都稳定）
+        $target = __DIR__ . "/assets/avatars/" . $filename;
+
+        if (!is_dir(__DIR__ . "/assets/avatars")) {
+            mkdir(__DIR__ . "/assets/avatars", 0777, true);
         }
 
         if (move_uploaded_file($_FILES['avatar']['tmp_name'], $target)) {
@@ -57,10 +59,14 @@ if (isset($_POST['change_password']) && !empty($_POST['new_password'])) {
     $message = "Password updated successfully.";
 }
 
-/* Avatar fallback */
+/* ======================
+   Avatar display path
+====================== */
+
+// ✅ 改 2：浏览器用「网站根目录绝对路径」
 $avatar = $user['avatar']
-    ? "assets/avatars/" . htmlspecialchars($user['avatar'])
-    : "assets/avatars/default.png";
+    ? "/assets/avatars/" . htmlspecialchars($user['avatar'])
+    : "/assets/avatars/default.png";
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -78,7 +84,7 @@ body{
   font-family:Segoe UI, Arial;
   background:
     linear-gradient(rgba(0,0,0,.55), rgba(0,0,0,.55)),
-    url("assets/img/bg-orderingol.jpg") center / cover no-repeat;
+    url("/assets/img/bg-orderingol.jpg") center / cover no-repeat;
 }
 
 .card{
@@ -161,6 +167,7 @@ a{
 
 <div class="card">
 
+  <!-- ✅ 改 3：头像一定能显示 -->
   <img src="<?= $avatar ?>" class="avatar" alt="Avatar">
 
   <h2><?= htmlspecialchars($user['username']) ?></h2>
