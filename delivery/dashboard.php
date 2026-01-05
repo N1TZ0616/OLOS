@@ -165,7 +165,7 @@ h2{margin:28px 0 14px}
 <?php while($o=mysqli_fetch_assoc($orders)): ?>
 <div class="card">
   <b>Order #<?= $o['id'] ?></b><br>
-  <?= htmlspecialchars($o['delivery_address']) ?><br>
+  <?= htmlspecialchars($o['delivery_address'] ?? 'No address provided') ?><br>
   RM <?= number_format($o['total_amount'],2) ?><br><br>
   <a class="btn green" href="accept.php?order_id=<?= $o['id'] ?>">Accept</a>
 </div>
@@ -177,7 +177,7 @@ h2{margin:28px 0 14px}
 <?php if($my): ?>
 <div class="card">
   <b>Order #<?= $my['order_id'] ?></b><br>
-  <?= htmlspecialchars($my['delivery_address']) ?><br><br>
+  <?= htmlspecialchars($my['delivery_address'] ?? 'No address provided') ?><br><br>
 
   <div class="timeline">
     <div class="step active">Accepted</div>
