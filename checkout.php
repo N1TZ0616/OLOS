@@ -19,7 +19,6 @@ if (!isset($_SESSION['cart']) || empty($_SESSION['cart'])) {
 }
 
 $cart = $_SESSION['cart'];
-$user_id = (int)$_SESSION['user_id'];
 
 /* ======================
    CALCULATE TOTAL
@@ -30,25 +29,12 @@ foreach ($cart as $item) {
 }
 
 /* ======================
-   PLACE ORDER
+   HANDLE PAYMENT REDIRECT
 ====================== */
 if (isset($_POST['place_order'])) {
 
     $method = $_POST['payment_method'] ?? 'alipay';
 
-    /* 🔥 关键：创建订单（真正写入数据库） */
-    $stmt = $conn->prepare("
-        INSERT INTO orders (user_id, total_amount, status, payment_method)
-        VALUES (?, ?, 'Pending', ?)
-    ");
-    $stmt->bind_param("ids", $user_id, $total, $method);
-    $stmt->execute();
-    $stmt->close();
-
-    /* 清空购物车 */
-    unset($_SESSION['cart']);
-
-    /* 跳转支付页面（模拟支付） */
     if ($method === 'alipay') {
         header("Location: alipay_pay.php");
         exit;
