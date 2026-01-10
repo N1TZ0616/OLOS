@@ -1,6 +1,4 @@
 <?php
-die("CHECKOUT VERSION 2026-01-10 FIXED");
-
 session_start();
 require "config/db.php";
 
