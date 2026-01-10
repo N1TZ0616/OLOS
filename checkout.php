@@ -19,6 +19,7 @@ if (!isset($_SESSION['cart']) || empty($_SESSION['cart'])) {
 }
 
 $user_id = (int)$_SESSION['user_id'];
+$restaurant_id = 1; // ✅ 固定餐厅 ID（方案二）
 $cart = $_SESSION['cart'];
 
 /* ======================
@@ -30,40 +31,50 @@ foreach ($cart as $item) {
 }
 
 /* ======================
-   PLACE ORDER (核心修复)
+   PLACE ORDER
 ====================== */
-if (isset($_POST['place_order'])) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['place_order'])) {
 
     $method = $_POST['payment_method'] ?? 'alipay';
 
-    /*
-      ⚠️ 关键点：
-      只插入 orders 表里“100% 存在的字段”
-      ❌ 不出现 restaurant_id
-    */
+    // ✅ 插入 orders 表（含 restaurant_id）
     $stmt = $conn->prepare("
-        INSERT INTO orders (user_id, total_amount, status, payment_method)
-        VALUES (?, ?, 'Pending', ?)
+        INSERT INTO orders 
+        (user_id, restaurant_id, total_amount, status, payment_method)
+        VALUES (?, ?, ?, 'Pending', ?)
     ");
-    $stmt->bind_param("ids", $user_id, $total, $method);
-    $stmt->execute();
+
+    if (!$stmt) {
+        die("Prepare failed: " . $conn->error);
+    }
+
+    $stmt->bind_param(
+        "iids",
+        $user_id,
+        $restaurant_id,
+        $total,
+        $method
+    );
+
+    if (!$stmt->execute()) {
+        die("Execute failed: " . $stmt->error);
+    }
+
+    // 保存订单 ID
+    $_SESSION['last_order_id'] = $stmt->insert_id;
     $stmt->close();
 
-    /* 清空购物车 */
+    // 清空购物车
     unset($_SESSION['cart']);
 
-    /* 跳转支付页面（模拟） */
+    // 跳转到对应支付页面
     if ($method === 'alipay') {
         header("Location: alipay_pay.php");
         exit;
-    }
-
-    if ($method === 'wechat') {
+    } elseif ($method === 'wechat') {
         header("Location: wechat_pay.php");
         exit;
-    }
-
-    if ($method === 'card') {
+    } elseif ($method === 'card') {
         header("Location: card_pay.php");
         exit;
     }
