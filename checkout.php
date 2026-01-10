@@ -18,6 +18,7 @@ if (!isset($_SESSION['cart']) || empty($_SESSION['cart'])) {
     exit;
 }
 
+$user_id = (int)$_SESSION['user_id'];
 $cart = $_SESSION['cart'];
 
 /* ======================
@@ -29,24 +30,38 @@ foreach ($cart as $item) {
 }
 
 /* ======================
-   HANDLE PAYMENT REDIRECT
+   PLACE ORDER (关键修复)
 ====================== */
 if (isset($_POST['place_order'])) {
 
     $method = $_POST['payment_method'] ?? 'alipay';
 
+    /* 🔥 1️⃣ 先创建订单 */
+    $stmt = $conn->prepare("
+        INSERT INTO orders (user_id, total_amount, status, payment_method)
+        VALUES (?, ?, 'Pending', ?)
+    ");
+    $stmt->bind_param("ids", $user_id, $total, $method);
+    $stmt->execute();
+    $order_id = $stmt->insert_id;
+    $stmt->close();
+
+    /* 🔥 2️⃣ 清空购物车 */
+    unset($_SESSION['cart']);
+
+    /* 🔥 3️⃣ 跳转支付页面 */
     if ($method === 'alipay') {
-        header("Location: alipay_pay.php");
+        header("Location: alipay_pay.php?order_id=$order_id");
         exit;
     }
 
     if ($method === 'wechat') {
-        header("Location: wechat_pay.php");
+        header("Location: wechat_pay.php?order_id=$order_id");
         exit;
     }
 
     if ($method === 'card') {
-        header("Location: card_pay.php");
+        header("Location: card_pay.php?order_id=$order_id");
         exit;
     }
 }
