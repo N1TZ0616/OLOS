@@ -18,6 +18,7 @@ if (!isset($_SESSION['cart']) || empty($_SESSION['cart'])) {
     exit;
 }
 
+$user_id = (int)$_SESSION['user_id'];
 $cart = $_SESSION['cart'];
 
 /* ======================
@@ -29,12 +30,35 @@ foreach ($cart as $item) {
 }
 
 /* ======================
-   HANDLE PAYMENT REDIRECT
+   HANDLE PLACE ORDER
 ====================== */
 if (isset($_POST['place_order'])) {
 
     $method = $_POST['payment_method'] ?? 'alipay';
 
+    /* 🔥 核心修复：创建订单 */
+    $stmt = $mysqli->prepare("
+        INSERT INTO orders (user_id, total_amount, status, payment_method, created_at)
+        VALUES (?, ?, 'Pending', ?, NOW())
+    ");
+    $stmt->bind_param("ids", $user_id, $total, $method);
+    $stmt->execute();
+
+    if ($stmt->affected_rows <= 0) {
+        die("Failed to create order: " . $stmt->error);
+    }
+
+    /* 拿到新订单 ID */
+    $order_id = $stmt->insert_id;
+    $stmt->close();
+
+    /* 清空购物车 */
+    unset($_SESSION['cart']);
+
+    /* 记录当前订单（给支付页用） */
+    $_SESSION['last_order_id'] = $order_id;
+
+    /* 跳转支付 */
     if ($method === 'alipay') {
         header("Location: alipay_pay.php");
         exit;
