@@ -19,8 +19,18 @@ if (!isset($_SESSION['cart']) || empty($_SESSION['cart'])) {
 }
 
 $user_id = (int)$_SESSION['user_id'];
-$restaurant_id = 1; // ✅ 固定餐厅 ID（方案二）
+$restaurant_id = 1;
 $cart = $_SESSION['cart'];
+
+/* ======================
+   GET USER ADDRESS
+====================== */
+$addrStmt = $conn->prepare("SELECT address FROM users WHERE id = ?");
+$addrStmt->bind_param("i", $user_id);
+$addrStmt->execute();
+$addrStmt->bind_result($delivery_address);
+$addrStmt->fetch();
+$addrStmt->close();
 
 /* ======================
    CALCULATE TOTAL
@@ -37,11 +47,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['place_order'])) {
 
     $method = $_POST['payment_method'] ?? 'alipay';
 
-    // ✅ 插入 orders 表（含 restaurant_id）
     $stmt = $conn->prepare("
         INSERT INTO orders 
-        (user_id, restaurant_id, total_amount, status, payment_method)
-        VALUES (?, ?, ?, 'Pending', ?)
+        (user_id, restaurant_id, delivery_address, total_amount, status, payment_method)
+        VALUES (?, ?, ?, ?, 'Pending', ?)
     ");
 
     if (!$stmt) {
@@ -49,9 +58,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['place_order'])) {
     }
 
     $stmt->bind_param(
-        "iids",
+        "iisds",
         $user_id,
         $restaurant_id,
+        $delivery_address,
         $total,
         $method
     );
@@ -60,14 +70,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['place_order'])) {
         die("Execute failed: " . $stmt->error);
     }
 
-    // 保存订单 ID
     $_SESSION['last_order_id'] = $stmt->insert_id;
     $stmt->close();
 
-    // 清空购物车
     unset($_SESSION['cart']);
 
-    // 跳转到对应支付页面
     if ($method === 'alipay') {
         header("Location: alipay_pay.php");
         exit;

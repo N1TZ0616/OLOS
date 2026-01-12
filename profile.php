@@ -11,10 +11,15 @@ if (!isset($_SESSION['user_id'])) {
 $user_id = (int)$_SESSION['user_id'];
 $message = "";
 
-/* Fetch user info */
+/* ======================
+   Fetch user info
+====================== */
 $user = mysqli_fetch_assoc(mysqli_query(
     $mysqli,
-    "SELECT username, email, avatar, balance FROM users WHERE id = $user_id LIMIT 1"
+    "SELECT username, email, avatar, balance, address 
+     FROM users 
+     WHERE id = $user_id 
+     LIMIT 1"
 ));
 
 if (!$user) {
@@ -32,8 +37,6 @@ if (isset($_POST['update_avatar']) && isset($_FILES['avatar']) && $_FILES['avata
     if (in_array($ext, $allowed)) {
 
         $filename = "avatar_" . $user_id . "_" . time() . "." . $ext;
-
-        // ✅ 改 1：磁盘真实路径（Render / 本地都稳定）
         $target = __DIR__ . "/assets/avatars/" . $filename;
 
         if (!is_dir(__DIR__ . "/assets/avatars")) {
@@ -46,6 +49,22 @@ if (isset($_POST['update_avatar']) && isset($_FILES['avatar']) && $_FILES['avata
             $message = "Avatar updated successfully.";
         }
     }
+}
+
+/* ======================
+   UPDATE ADDRESS
+====================== */
+if (isset($_POST['update_address'])) {
+
+    $address = trim($_POST['address']);
+
+    $stmt = $mysqli->prepare("UPDATE users SET address = ? WHERE id = ?");
+    $stmt->bind_param("si", $address, $user_id);
+    $stmt->execute();
+    $stmt->close();
+
+    $user['address'] = $address;
+    $message = "Address updated successfully.";
 }
 
 /* ======================
@@ -62,8 +81,6 @@ if (isset($_POST['change_password']) && !empty($_POST['new_password'])) {
 /* ======================
    Avatar display path
 ====================== */
-
-// ✅ 改 2：浏览器用「网站根目录绝对路径」
 $avatar = $user['avatar']
     ? "/assets/avatars/" . htmlspecialchars($user['avatar'])
     : "/assets/avatars/default.png";
@@ -118,7 +135,8 @@ p{margin:0;color:#9ca3af;font-size:14px;}
 
 form{margin-top:18px;}
 
-input[type=password]{
+input[type=password],
+input[type=text]{
   width:100%;
   padding:10px;
   border-radius:10px;
@@ -167,7 +185,6 @@ a{
 
 <div class="card">
 
-  <!-- ✅ 改 3：头像一定能显示 -->
   <img src="<?= $avatar ?>" class="avatar" alt="Avatar">
 
   <h2><?= htmlspecialchars($user['username']) ?></h2>
@@ -176,6 +193,18 @@ a{
   <div class="balance">
     Balance: RM <?= number_format($user['balance'], 2) ?>
   </div>
+
+  <!-- Update Address -->
+  <form method="post">
+    <input 
+      type="text" 
+      name="address" 
+      placeholder="Delivery Address"
+      value="<?= htmlspecialchars($user['address'] ?? '') ?>"
+      required
+    >
+    <button name="update_address">Update Address</button>
+  </form>
 
   <!-- Update Avatar -->
   <form method="post" enctype="multipart/form-data">
