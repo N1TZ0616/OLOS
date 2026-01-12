@@ -7,15 +7,10 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'restaurant_staff') {
     exit;
 }
 
-/* =================================================
-   0️⃣ SET PHP TIMEZONE（非常关键）
-   统一 PHP 时间，避免和 MySQL 不一致
-================================================= */
 date_default_timezone_set("Asia/Kuala_Lumpur");
 
 /* =================================================
    1️⃣ AUTO COMPLETE ORDERS
-   ❗ 使用 PHP 时间判断，而不是 NOW()
 ================================================= */
 $now = date("Y-m-d H:i:s");
 
@@ -28,7 +23,7 @@ WHERE status = 'Preparing'
 ");
 
 /* =================================================
-   2️⃣ SYNC CHEF STATUS（以订单状态为准）
+   2️⃣ SYNC CHEF STATUS
 ================================================= */
 mysqli_query($conn, "
 UPDATE chefs c
@@ -103,7 +98,6 @@ ORDER BY o.created_at DESC
 <meta charset="UTF-8">
 <title>Restaurant Orders</title>
 
-<!-- ✅ 自动刷新：保证 PHP 会重复执行 -->
 <meta http-equiv="refresh" content="10">
 
 <style>
@@ -214,7 +208,13 @@ button{
     <div>
       Time<br>
       <?php if ($status === 'Preparing'):
-        $left = max(0, ceil((strtotime($o['prep_end_time']) - strtotime($now)) / 60));
+
+        if (!empty($o['prep_end_time'])) {
+            $left = max(0, ceil((strtotime($o['prep_end_time']) - strtotime($now)) / 60));
+        } else {
+            $left = 0;
+        }
+
       ?>
         <span class="time" style="color:#e67e22">
           <?= $left ?> min left

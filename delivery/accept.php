@@ -2,12 +2,30 @@
 session_start();
 require "../config/db.php";
 
-$rider_id = $_SESSION['user_id'];
-$order_id = intval($_GET['order_id']);
+/* Rider login check（不影响原功能） */
+if (!isset($_SESSION['user_id'])) {
+    header("Location: ../index.php");
+    exit;
+}
 
-mysqli_query($conn,"
-INSERT INTO delivery (order_id,rider_id)
-VALUES ($order_id,$rider_id)
+$rider_id = (int)$_SESSION['user_id'];
+$order_id = (int)$_GET['order_id'];
+
+/* ======================
+   Create delivery record
+====================== */
+mysqli_query($conn, "
+INSERT INTO delivery (order_id, rider_id, status, started_at)
+VALUES ($order_id, $rider_id, 'delivering', NOW())
+");
+
+/* ======================
+   🔥 Sync order status
+====================== */
+mysqli_query($conn, "
+UPDATE orders
+SET status = 'Delivering'
+WHERE id = $order_id
 ");
 ?>
 <!DOCTYPE html>
@@ -32,13 +50,13 @@ animation:load 6s linear forwards}
 <body>
 
 <div class="card">
-<div class="icon">✓</div>
-<h2>Order Accepted</h2>
-<p>Order #<?= $order_id ?> assigned to you</p>
-<div style="background:#e5e7eb;border-radius:999px">
-<div class="bar"></div>
-</div>
-<p>Redirecting...</p>
+  <div class="icon">✓</div>
+  <h2>Order Accepted</h2>
+  <p>Order #<?= $order_id ?> assigned to you</p>
+  <div style="background:#e5e7eb;border-radius:999px">
+    <div class="bar"></div>
+  </div>
+  <p>Redirecting...</p>
 </div>
 
 <script>
